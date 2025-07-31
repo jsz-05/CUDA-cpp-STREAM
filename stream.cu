@@ -71,7 +71,7 @@ void print_help()
       );
 }
 
-void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, bool& CSV_header, int& N, int& blockSize)
+void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, bool& CSV_header, long long& N, int& blockSize)
 {
   // Default values
   SI = false;
@@ -109,7 +109,7 @@ void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, b
         CSV_header = true;
         break;
       case 'n':
-        N = std::atoi(optarg);
+        N = std::atoll(optarg);  // 64-bit safe
         break;
       case 'b':
         blockSize = std::atoi(optarg);
@@ -175,12 +175,15 @@ int main(int argc, char** argv)
 
   // Parse arguments
   bool SI, CSV, CSV_full, CSV_header;
-  int N, blockSize;
+  long long N;
+  int blockSize;
   parse_options(argc, argv, SI, CSV, CSV_full, CSV_header, N, blockSize);
 
   if (!CSV) {
     printf("STREAM Benchmark implementation in CUDA\n");
-    printf("Array size (%s precision) = %7.2f MB\n", sizeof(double)==sizeof(real)?"double":"single", double(N)*double(sizeof(real))/1.e6);
+    double totalGiB = (3.0 * (double)N * sizeof(real)) / (1024.0 * 1024.0 * 1024.0);
+    printf("Total array footprint = %.2f GiB (%lld elements per array)\n",
+          totalGiB, N);
   }
 
   /* Allocate memory on device */
@@ -210,7 +213,7 @@ int main(int argc, char** argv)
 
   /* Compute execution configuration */
   dim3 dimBlock(blockSize);
-  dim3 dimGrid(N/dimBlock.x );
+  dim3 dimGrid((unsigned long long)N / dimBlock.x);
   if( N % dimBlock.x != 0 ) dimGrid.x+=1;
 
   if (!CSV) {
