@@ -1,4 +1,4 @@
-CC = pgc++
+CC = g++
 ARCH=sm_90a
 MODEL = -DZERO_COPY
 CPPFLAGS=-DNTIMES=20 $(MODEL)
