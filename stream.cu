@@ -280,20 +280,39 @@ int main(int argc, char** argv)
     3 * sizeof(real) * (double)N,
     3 * sizeof(real) * (double)N
   };
+  
+  // added: split total bytes into reads vs writes
+  double read_bytes[4]  = {
+    1 * sizeof(real) * (double)N,   // Copy: 1 read stream
+    1 * sizeof(real) * (double)N,   // Scale: 1 read stream
+    2 * sizeof(real) * (double)N,   // Add:   2 read streams
+    2 * sizeof(real) * (double)N    // Triad: 2 read streams
+  };
+  double write_bytes[4] = {
+    1 * sizeof(real) * (double)N,   // Copy
+    1 * sizeof(real) * (double)N,   // Scale
+    1 * sizeof(real) * (double)N,   // Add
+    1 * sizeof(real) * (double)N    // Triad
+  };
+
 
   // Use right units
   const double G = SI ? 1.e9 : static_cast<double>(1<<30);
   std::string gbpersec = SI ? "GB/s" : "GiB/s";
 
   if (!CSV) {
-    printf("\nFunction      Rate %s  Avg time(s)  Min time(s)  Max time(s)\n", gbpersec.c_str() );
-    printf("-----------------------------------------------------------------\n");
+    printf("\nFunction      Read %s  Write %s   Avg time(s)  Min time(s)  Max time(s)\n",
+          gbpersec.c_str(), gbpersec.c_str());
+    printf("--------------------------------------------------------------------------\n");
+
     for (j=0; j<4; j++) {
-      printf("%s%11.2f     %11.8f  %11.8f  %11.8f\n", label[j].c_str(),
-          bytes[j]/mintime[j] / G,
-          avgtime[j],
-          mintime[j],
-          maxtime[j]);
+      printf("%s%11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
+             label[j].c_str(),
+             read_bytes[j]  / mintime[j] / G,
+             write_bytes[j] / mintime[j] / G,
+             avgtime[j],
+             mintime[j],
+             maxtime[j]);
     }
   } else {
     if (CSV_full) {
