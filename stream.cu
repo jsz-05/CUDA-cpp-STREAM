@@ -10,7 +10,7 @@ It measures the memory system on the device.
 The implementation is in double precision.
 
 Code based on the code developed by John D. McCalpin
-http://www.cs.virginia.edu/stream/FTP/Code/stream.c
+http://www.cs.virginia.edu/stream/FTP/Code/stream.cnumactl --hardware
 
 Written by: Massimiliano Fatica, NVIDIA Corporation
 
@@ -46,8 +46,8 @@ Further modifications by: Ben Cumming, CSCS; Andreas Herten (JSC/FZJ); Sebastian
 
 typedef double real;
 
-static double   avgtime[5] = {0}, maxtime[5] = {0},
-                mintime[5] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
+static double   avgtime[6] = {0}, maxtime[6] = {0},
+                mintime[6] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
 
 
 void print_help()
@@ -157,11 +157,26 @@ __global__ void STREAM_Triad(T const * __restrict__ a, T const * __restrict__ b,
 }
 
 template <typename T>
-__global__ void STREAM_AddThree(T const * __restrict__ b, T const * __restrict__ c, T const * __restrict__ d, T * __restrict__ const a, int len)
+__global__ void STREAM_ThreeAdd(T const * __restrict__ b, T const * __restrict__ c, T const * __restrict__ d, T * __restrict__ const a, int len)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx < len)
         a[idx] = b[idx] + c[idx] + d[idx];
+}
+
+template<typename T>
+__global__ void STREAM_TwoCopy(
+  T const* __restrict__ b,
+  T const* __restrict__ c,
+  T*       __restrict__ a,
+  T*       __restrict__ d,
+  int len)
+{
+  int idx = threadIdx.x + blockIdx.x*blockDim.x;
+  if (idx < len) {
+    a[idx] = b[idx];   // copy #1
+    d[idx] = c[idx];   // copy #2
+  }
 }
 
 
@@ -169,10 +184,10 @@ int main(int argc, char** argv)
 {
   real *d_a, *d_b, *d_c, *d_d;  // add d_d
   int j,k;
-  double times[5][NTIMES];
+  double times[6][NTIMES];
   real scalar;
   std::chrono::steady_clock::time_point start_time, end_time;
-  std::vector<std::string> label{"Copy:      ", "Scale:     ", "Add:       ", "Triad:     ", "AddThree:  "};
+  std::vector<std::string> label{"Copy:","Scale:","Add:","Triad:","ThreeAdd:","TwoCopy:"};
 
   // Parse arguments
   bool SI, CSV, CSV_full, CSV_header;
@@ -269,12 +284,19 @@ int main(int argc, char** argv)
       end_time = std::chrono::steady_clock::now();
       times[3][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
     }
-    if (mode == -1) { // AddThree (always runs if mode = all)
+    if (mode == -1) { // ThreeAdd (always runs if mode = all)
     start_time = std::chrono::steady_clock::now();
-    STREAM_AddThree<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_d, d_a, N);
+    STREAM_ThreeAdd<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_d, d_a, N);
     cudaDeviceSynchronize();
     end_time = std::chrono::steady_clock::now();
     times[4][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
+    if (mode == -1) {
+    start_time = std::chrono::steady_clock::now();
+    STREAM_TwoCopy<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_a, d_d, N);
+    cudaDeviceSynchronize();
+    end_time = std::chrono::steady_clock::now();
+    times[5][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
     }
   }
 
@@ -282,38 +304,46 @@ int main(int argc, char** argv)
 
   for (k=1; k<NTIMES; k++) /* note -- skip first iteration */
   {
-    for (j=0; j<5; j++)      // ← change 4 → 5
+    for (j=0; j<6; j++)
     {
       avgtime[j] = avgtime[j] + times[j][k];
       mintime[j] = MIN(mintime[j], times[j][k]);
       maxtime[j] = MAX(maxtime[j], times[j][k]);
     }
   }
-  for (j=0; j<5; j++)        // ← change 4 → 5
+  for (j=0; j<6; j++)
     avgtime[j] = avgtime[j]/(double)(NTIMES-1);
 
-  double bytes[5] = {
-      2 * sizeof(real) * (double)N,
-      2 * sizeof(real) * (double)N,
-      3 * sizeof(real) * (double)N,
-      3 * sizeof(real) * (double)N,
-      4 * sizeof(real) * (double)N  // AddThree: 3 reads + 1 write
+  // Total bytes moved per kernel (reads + writes)
+  double bytes[6] = {
+      2 * sizeof(real) * (double)N,  // Copy: 1 read + 1 write
+      2 * sizeof(real) * (double)N,  // Scale: 1 read + 1 write
+      3 * sizeof(real) * (double)N,  // Add: 2 reads + 1 write
+      3 * sizeof(real) * (double)N,  // Triad: 2 reads + 1 write
+      4 * sizeof(real) * (double)N,  // ThreeAdd: 3 reads + 1 write
+      4 * sizeof(real) * (double)N   // TwoCopy: 2 reads + 2 writes
   };
 
-  double read_bytes[5]  = {
-      1 * sizeof(real) * (double)N,
-      1 * sizeof(real) * (double)N,
-      2 * sizeof(real) * (double)N,
-      2 * sizeof(real) * (double)N,
-      3 * sizeof(real) * (double)N  // AddThree: 3 reads
+  // Bytes read only
+  double read_bytes[6] = {
+      1 * sizeof(real) * (double)N,  // Copy
+      1 * sizeof(real) * (double)N,  // Scale
+      2 * sizeof(real) * (double)N,  // Add
+      2 * sizeof(real) * (double)N,  // Triad
+      3 * sizeof(real) * (double)N,  // ThreeAdd
+      2 * sizeof(real) * (double)N   // TwoCopy
   };
-  double write_bytes[5] = {
-      1 * sizeof(real) * (double)N,
-      1 * sizeof(real) * (double)N,
-      1 * sizeof(real) * (double)N,
-      1 * sizeof(real) * (double)N,
-      1 * sizeof(real) * (double)N  // AddThree: 1 write
+
+  // Bytes written only
+  double write_bytes[6] = {
+      1 * sizeof(real) * (double)N,  // Copy
+      1 * sizeof(real) * (double)N,  // Scale
+      1 * sizeof(real) * (double)N,  // Add
+      1 * sizeof(real) * (double)N,  // Triad
+      1 * sizeof(real) * (double)N,  // ThreeAdd
+      2 * sizeof(real) * (double)N   // TwoCopy
   };
+
 
 
 
@@ -326,16 +356,19 @@ int main(int argc, char** argv)
           gbpersec.c_str(), gbpersec.c_str());
     printf("--------------------------------------------------------------------------\n");
 
-  for (j=0; j<5; j++) {
-      if (mode != -1 && mode != j) continue;  // only print the selected kernel
-      printf("%s%11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
+  for (j = 0; j < 6; j++) {
+      if (mode != -1 && mode != j) 
+          continue;  // only print the selected kernel if mode is set
+
+      printf("%-12s %11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
             label[j].c_str(),
-            read_bytes[j]  / mintime[j] / G,
-            write_bytes[j] / mintime[j] / G,
+            read_bytes[j]/mintime[j]/G,
+            write_bytes[j]/mintime[j]/G,
             avgtime[j],
             mintime[j],
             maxtime[j]);
   }
+
   } else {
     if (CSV_full) {
       if (CSV_header)
