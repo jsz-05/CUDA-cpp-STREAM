@@ -71,7 +71,7 @@ void print_help()
       );
 }
 
-void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, bool& CSV_header, long long& N, int& blockSize)
+void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, bool& CSV_header, long long& N, int& blockSize, int& mode)
 {
   // Default values
   SI = false;
@@ -80,6 +80,7 @@ void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, b
   CSV_header = false;
   N = 1<<26;
   blockSize = 192;
+  mode = -1; // -1 = run all
 
   static struct option long_options[] = {
     {"si",        no_argument,       0,  's' },
@@ -88,6 +89,10 @@ void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, b
     {"title",     no_argument,       0,  't' },
     {"nelements", required_argument, 0,  'n' },
     {"blocksize", required_argument, 0,  'b' },
+    {"only-copy", no_argument,       0,  1 },
+    {"only-scale",no_argument,       0,  2 },
+    {"only-add",  no_argument,       0,  3 },
+    {"only-triad",no_argument,       0,  4 },
     {"help",      no_argument,       0,  'h' },
     {0,           0,                 0,  0   }
   };
@@ -96,31 +101,18 @@ void parse_options(int argc, char** argv, bool& SI, bool& CSV, bool& CSV_full, b
   while ((c = getopt_long(argc, argv, "scftn:b:h", long_options, &option_index)) != -1)
     switch (c)
     {
-      case 's':
-        SI = true;
-        break;
-      case 'c':
-        CSV = true;
-        break;
-      case 'f':
-        CSV_full = true;
-        break;
-      case 't':
-        CSV_header = true;
-        break;
-      case 'n':
-        N = std::atoll(optarg);  // 64-bit safe
-        break;
-      case 'b':
-        blockSize = std::atoi(optarg);
-        break;
-      case 'h':
-        print_help();
-        std::exit(0);
-        break;
-      default:
-        print_help();
-        std::exit(1);
+      case 's': SI = true; break;
+      case 'c': CSV = true; break;
+      case 'f': CSV_full = true; break;
+      case 't': CSV_header = true; break;
+      case 'n': N = std::atoll(optarg); break;
+      case 'b': blockSize = std::atoi(optarg); break;
+      case 1: mode = 0; break; // only-copy
+      case 2: mode = 1; break; // only-scale
+      case 3: mode = 2; break; // only-add
+      case 4: mode = 3; break; // only-triad
+      case 'h': print_help(); std::exit(0); break;
+      default: print_help(); std::exit(1);
     }
 }
 
@@ -177,7 +169,8 @@ int main(int argc, char** argv)
   bool SI, CSV, CSV_full, CSV_header;
   long long N;
   int blockSize;
-  parse_options(argc, argv, SI, CSV, CSV_full, CSV_header, N, blockSize);
+  int mode;  // new
+  parse_options(argc, argv, SI, CSV, CSV_full, CSV_header, N, blockSize, mode);
 
   if (!CSV) {
     printf("STREAM Benchmark implementation in CUDA\n");
@@ -233,31 +226,35 @@ int main(int argc, char** argv)
   /*  --- MAIN LOOP --- repeat test cases NTIMES times --- */
 
   scalar=3.0f;
-  for (k=0; k<NTIMES; k++)
-  {
-    start_time = std::chrono::steady_clock::now();
-    STREAM_Copy<real><<<dimGrid,dimBlock>>>(d_a, d_c, N);
-    cudaDeviceSynchronize();
-    end_time = std::chrono::steady_clock::now();
-    times[0][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
-
-    start_time = std::chrono::steady_clock::now();
-    STREAM_Scale<real><<<dimGrid,dimBlock>>>(d_b, d_c, scalar,  N);
-    cudaDeviceSynchronize();
-    end_time = std::chrono::steady_clock::now();
-    times[1][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
-
-    start_time = std::chrono::steady_clock::now();
-    STREAM_Add<real><<<dimGrid,dimBlock>>>(d_a, d_b, d_c,  N);
-    cudaDeviceSynchronize();
-    end_time = std::chrono::steady_clock::now();
-    times[2][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
-
-    start_time = std::chrono::steady_clock::now();
-    STREAM_Triad<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_a, scalar,  N);
-    cudaDeviceSynchronize();
-    end_time = std::chrono::steady_clock::now();
-    times[3][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+  for (k=0; k<NTIMES; k++) {
+    if (mode == -1 || mode == 0) { // Copy
+      start_time = std::chrono::steady_clock::now();
+      STREAM_Copy<real><<<dimGrid,dimBlock>>>(d_a, d_c, N);
+      cudaDeviceSynchronize();
+      end_time = std::chrono::steady_clock::now();
+      times[0][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
+    if (mode == -1 || mode == 1) { // Scale
+      start_time = std::chrono::steady_clock::now();
+      STREAM_Scale<real><<<dimGrid,dimBlock>>>(d_b, d_c, scalar, N);
+      cudaDeviceSynchronize();
+      end_time = std::chrono::steady_clock::now();
+      times[1][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
+    if (mode == -1 || mode == 2) { // Add
+      start_time = std::chrono::steady_clock::now();
+      STREAM_Add<real><<<dimGrid,dimBlock>>>(d_a, d_b, d_c, N);
+      cudaDeviceSynchronize();
+      end_time = std::chrono::steady_clock::now();
+      times[2][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
+    if (mode == -1 || mode == 3) { // Triad
+      start_time = std::chrono::steady_clock::now();
+      STREAM_Triad<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_a, scalar, N);
+      cudaDeviceSynchronize();
+      end_time = std::chrono::steady_clock::now();
+      times[3][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
   }
 
   /*  --- SUMMARY --- */
@@ -305,15 +302,16 @@ int main(int argc, char** argv)
           gbpersec.c_str(), gbpersec.c_str());
     printf("--------------------------------------------------------------------------\n");
 
-    for (j=0; j<4; j++) {
+  for (j=0; j<4; j++) {
+      if (mode != -1 && mode != j) continue;  // only print the selected kernel
       printf("%s%11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
-             label[j].c_str(),
-             read_bytes[j]  / mintime[j] / G,
-             write_bytes[j] / mintime[j] / G,
-             avgtime[j],
-             mintime[j],
-             maxtime[j]);
-    }
+            label[j].c_str(),
+            read_bytes[j]  / mintime[j] / G,
+            write_bytes[j] / mintime[j] / G,
+            avgtime[j],
+            mintime[j],
+            maxtime[j]);
+  }
   } else {
     if (CSV_full) {
       if (CSV_header)
