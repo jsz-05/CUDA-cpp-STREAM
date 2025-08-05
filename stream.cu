@@ -46,8 +46,8 @@ Further modifications by: Ben Cumming, CSCS; Andreas Herten (JSC/FZJ); Sebastian
 
 typedef double real;
 
-static double   avgtime[4] = {0}, maxtime[4] = {0},
-                mintime[4] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
+static double   avgtime[5] = {0}, maxtime[5] = {0},
+                mintime[5] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX,FLT_MAX};
 
 
 void print_help()
@@ -156,14 +156,23 @@ __global__ void STREAM_Triad(T const * __restrict__ a, T const * __restrict__ b,
     c[idx] = a[idx] + scalar * b[idx];
 }
 
+template <typename T>
+__global__ void STREAM_AddThree(T const * __restrict__ b, T const * __restrict__ c, T const * __restrict__ d, T * __restrict__ const a, int len)
+{
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < len)
+        a[idx] = b[idx] + c[idx] + d[idx];
+}
+
+
 int main(int argc, char** argv)
 {
-  real *d_a, *d_b, *d_c;
+  real *d_a, *d_b, *d_c, *d_d;  // add d_d
   int j,k;
-  double times[4][NTIMES];
+  double times[5][NTIMES];
   real scalar;
   std::chrono::steady_clock::time_point start_time, end_time;
-  std::vector<std::string> label{"Copy:      ", "Scale:     ", "Add:       ", "Triad:     "};
+  std::vector<std::string> label{"Copy:      ", "Scale:     ", "Add:       ", "Triad:     ", "AddThree:  "};
 
   // Parse arguments
   bool SI, CSV, CSV_full, CSV_header;
@@ -174,7 +183,7 @@ int main(int argc, char** argv)
 
   if (!CSV) {
     printf("STREAM Benchmark implementation in CUDA\n");
-    double totalGiB = (3.0 * (double)N * sizeof(real)) / (1024.0 * 1024.0 * 1024.0);
+    double totalGiB = (4.0 * (double)N * sizeof(real)) / (1024.0*1024.0*1024.0);
     printf("Total array footprint = %.2f GiB (%lld elements per array)\n",
           totalGiB, N);
   }
@@ -186,9 +195,11 @@ int main(int argc, char** argv)
   d_c=(real*)malloc(sizeof(real)*N);
 #elif defined(ZERO_COPY)
   real *h_a, *h_b, *h_c;
+  real *h_d;
   cudaHostAlloc((void **) &h_a, sizeof(real)*N, cudaHostAllocMapped);
   cudaHostAlloc((void **) &h_b, sizeof(real)*N, cudaHostAllocMapped);
   cudaHostAlloc((void **) &h_c, sizeof(real)*N, cudaHostAllocMapped);
+  cudaHostAlloc((void **) &h_d, sizeof(real)*N, cudaHostAllocMapped);
 
   // these compiles fine but don't run correctly.
   //h_a=(real*)malloc(sizeof(real)*N);
@@ -198,10 +209,12 @@ int main(int argc, char** argv)
   cudaHostGetDevicePointer((void **) &d_a, (void *) h_a, 0);
   cudaHostGetDevicePointer((void **) &d_b, (void *) h_a, 0);
   cudaHostGetDevicePointer((void **) &d_c, (void *) h_a, 0);
+  cudaHostGetDevicePointer((void **) &d_d, (void *) h_d, 0);
 #else 
   cudaMalloc((void**)&d_a, sizeof(real)*N);
   cudaMalloc((void**)&d_b, sizeof(real)*N);
   cudaMalloc((void**)&d_c, sizeof(real)*N);
+  cudaMalloc((void**)&d_d, sizeof(real)*N);
 #endif
 
   /* Compute execution configuration */
@@ -222,6 +235,7 @@ int main(int argc, char** argv)
   set_array<real><<<dimGrid,dimBlock>>>(d_a, 2.f, N);
   set_array<real><<<dimGrid,dimBlock>>>(d_b, .5f, N);
   set_array<real><<<dimGrid,dimBlock>>>(d_c, .5f, N);
+  set_array<real><<<dimGrid,dimBlock>>>(d_d, 1.f, N);
 
   /*  --- MAIN LOOP --- repeat test cases NTIMES times --- */
 
@@ -255,42 +269,52 @@ int main(int argc, char** argv)
       end_time = std::chrono::steady_clock::now();
       times[3][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
     }
+    if (mode == -1) { // AddThree (always runs if mode = all)
+    start_time = std::chrono::steady_clock::now();
+    STREAM_AddThree<real><<<dimGrid,dimBlock>>>(d_b, d_c, d_d, d_a, N);
+    cudaDeviceSynchronize();
+    end_time = std::chrono::steady_clock::now();
+    times[4][k] = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time).count();
+    }
   }
 
   /*  --- SUMMARY --- */
 
   for (k=1; k<NTIMES; k++) /* note -- skip first iteration */
   {
-    for (j=0; j<4; j++)
+    for (j=0; j<5; j++)      // ← change 4 → 5
     {
       avgtime[j] = avgtime[j] + times[j][k];
       mintime[j] = MIN(mintime[j], times[j][k]);
       maxtime[j] = MAX(maxtime[j], times[j][k]);
     }
   }
-  for (j=0; j<4; j++)
+  for (j=0; j<5; j++)        // ← change 4 → 5
     avgtime[j] = avgtime[j]/(double)(NTIMES-1);
 
-  double bytes[4] = {
-    2 * sizeof(real) * (double)N,
-    2 * sizeof(real) * (double)N,
-    3 * sizeof(real) * (double)N,
-    3 * sizeof(real) * (double)N
+  double bytes[5] = {
+      2 * sizeof(real) * (double)N,
+      2 * sizeof(real) * (double)N,
+      3 * sizeof(real) * (double)N,
+      3 * sizeof(real) * (double)N,
+      4 * sizeof(real) * (double)N  // AddThree: 3 reads + 1 write
   };
-  
-  // added: split total bytes into reads vs writes
-  double read_bytes[4]  = {
-    1 * sizeof(real) * (double)N,   // Copy: 1 read stream
-    1 * sizeof(real) * (double)N,   // Scale: 1 read stream
-    2 * sizeof(real) * (double)N,   // Add:   2 read streams
-    2 * sizeof(real) * (double)N    // Triad: 2 read streams
+
+  double read_bytes[5]  = {
+      1 * sizeof(real) * (double)N,
+      1 * sizeof(real) * (double)N,
+      2 * sizeof(real) * (double)N,
+      2 * sizeof(real) * (double)N,
+      3 * sizeof(real) * (double)N  // AddThree: 3 reads
   };
-  double write_bytes[4] = {
-    1 * sizeof(real) * (double)N,   // Copy
-    1 * sizeof(real) * (double)N,   // Scale
-    1 * sizeof(real) * (double)N,   // Add
-    1 * sizeof(real) * (double)N    // Triad
+  double write_bytes[5] = {
+      1 * sizeof(real) * (double)N,
+      1 * sizeof(real) * (double)N,
+      1 * sizeof(real) * (double)N,
+      1 * sizeof(real) * (double)N,
+      1 * sizeof(real) * (double)N  // AddThree: 1 write
   };
+
 
 
   // Use right units
@@ -302,7 +326,7 @@ int main(int argc, char** argv)
           gbpersec.c_str(), gbpersec.c_str());
     printf("--------------------------------------------------------------------------\n");
 
-  for (j=0; j<4; j++) {
+  for (j=0; j<5; j++) {
       if (mode != -1 && mode != j) continue;  // only print the selected kernel
       printf("%s%11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
             label[j].c_str(),
@@ -362,6 +386,7 @@ int main(int argc, char** argv)
   cudaFree(d_a);
   cudaFree(d_b);
   cudaFree(d_c);
+  cudaFree(d_d);
 #endif
 }
 
