@@ -324,49 +324,22 @@ int main(int argc, char** argv)
       4 * sizeof(real) * (double)N   // TwoCopy: 2 reads + 2 writes
   };
 
-  // Bytes read only
-  double read_bytes[6] = {
-      1 * sizeof(real) * (double)N,  // Copy
-      1 * sizeof(real) * (double)N,  // Scale
-      2 * sizeof(real) * (double)N,  // Add
-      2 * sizeof(real) * (double)N,  // Triad
-      3 * sizeof(real) * (double)N,  // ThreeAdd
-      2 * sizeof(real) * (double)N   // TwoCopy
-  };
-
-  // Bytes written only
-  double write_bytes[6] = {
-      1 * sizeof(real) * (double)N,  // Copy
-      1 * sizeof(real) * (double)N,  // Scale
-      1 * sizeof(real) * (double)N,  // Add
-      1 * sizeof(real) * (double)N,  // Triad
-      1 * sizeof(real) * (double)N,  // ThreeAdd
-      2 * sizeof(real) * (double)N   // TwoCopy
-  };
-
-
-
-
   // Use right units
   const double G = SI ? 1.e9 : static_cast<double>(1<<30);
   std::string gbpersec = SI ? "GB/s" : "GiB/s";
 
   if (!CSV) {
-    printf("\nFunction      Read %s  Write %s   Avg time(s)  Min time(s)  Max time(s)\n",
-          gbpersec.c_str(), gbpersec.c_str());
-    printf("--------------------------------------------------------------------------\n");
+    printf("\nFunction      Rate %s  Avg time(s)  Min time(s)  Max time(s)\n", gbpersec.c_str() );
+    printf("-----------------------------------------------------------------\n");
 
   for (j = 0; j < 6; j++) {
       if (mode != -1 && mode != j) 
           continue;  // only print the selected kernel if mode is set
-
-      printf("%-12s %11.2f  %11.2f   %11.8f  %11.8f  %11.8f\n",
-            label[j].c_str(),
-            read_bytes[j]/mintime[j]/G,
-            write_bytes[j]/mintime[j]/G,
-            avgtime[j],
-            mintime[j],
-            maxtime[j]);
+      printf("%-11s %11.2f %14.8f %14.8f %14.8f\n", label[j].c_str(),
+          bytes[j]/mintime[j] / G,
+          avgtime[j],
+          mintime[j],
+          maxtime[j]);
   }
 
   } else {
