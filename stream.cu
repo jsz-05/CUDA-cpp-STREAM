@@ -222,8 +222,8 @@ int main(int argc, char** argv)
   //h_c=(real*)malloc(sizeof(real)*N);
 
   cudaHostGetDevicePointer((void **) &d_a, (void *) h_a, 0);
-  cudaHostGetDevicePointer((void **) &d_b, (void *) h_a, 0);
-  cudaHostGetDevicePointer((void **) &d_c, (void *) h_a, 0);
+  cudaHostGetDevicePointer((void **) &d_b, (void *) h_b, 0); // fixed
+  cudaHostGetDevicePointer((void **) &d_c, (void *) h_c, 0); // fixed
   cudaHostGetDevicePointer((void **) &d_d, (void *) h_d, 0);
 #else 
   cudaMalloc((void**)&d_a, sizeof(real)*N);
@@ -379,12 +379,11 @@ int main(int argc, char** argv)
   free(d_b);
   free(d_c);
 #elif defined(ZERO_COPY)
-  cudaFree(d_a);
-  cudaFree(d_b);
-  cudaFree(d_c);
+  // free the host pointers allocated with cudaHostAlloc
   cudaFreeHost(h_a);
   cudaFreeHost(h_b);
   cudaFreeHost(h_c);
+  cudaFreeHost(h_d); // Added missing free
 //  free(h_a);
 //  free(h_b);
 //  free(h_c);
