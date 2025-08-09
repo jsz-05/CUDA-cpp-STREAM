@@ -1,0 +1,60 @@
+(base) ubuntu@1pgrace-523:~/projects/CUDA-cpp-STREAM/cpu_tests$ sudo docker run nvcr.io/nvidia/hpc-benchmarks:24.06 ./stream-cpu-test.sh --n 1000000000
+
+=========================================================
+================= NVIDIA HPC Benchmarks =================
+=========================================================
+NVIDIA Release 24.06
+Copyright (c) 2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+Various files include modifications (c) NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+WARNING: The NVIDIA Driver was not detected.  GPU functionality will not be available.
+   Use the NVIDIA Container Toolkit to start this container with GPU support; see
+   https://docs.nvidia.com/datacenter/cloud-native/ .
+
+WARNING: No InfiniBand devices detected.
+         Multi-node communication performance may be reduced.
+         Ensure /dev/infiniband is mounted to this container.
+
+NOTE: The SHMEM allocation limit is set to the default of 64MB.  This may be
+   insufficient for NVIDIA HPC Benchmarks.  NVIDIA recommends the use of the following flags:
+   docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 ...
+
+Command line: OMP_NUM_THREADS=72 OMP_PROC_BIND=spread taskset -c 0-71 /workspace/stream-cpu-linux-aarch64/stream_test -n1000000000
+
+======================================================================================
+NVIDIA-STREAM 24.6.0  -- NVIDIA accelerated STREAM benchmark for Grace CPU -- NVIDIA
+======================================================================================
+usage: ./stream_test
+        -n<elements>    [Number of elements on array]
+-------------------------------------------------------------
+This system uses 8 bytes per array element.
+-------------------------------------------------------------
+Array size = 1000000000 (elements)
+Memory per array = 7629.4 MiB (= 7.5 GiB).
+Total memory required = 22888.2 MiB (= 22.4 GiB).
+Number of Threads requested = 72
+Number of Threads counted = 72
+-------------------------------------------------------------
+Your clock granularity/precision appears to be 1 microseconds.
+Each test below will take on the order of 55204 microseconds.
+   (= 55204 clock ticks)
+Increase the size of the arrays if this shows that
+you are not getting at least 20 clock ticks per test.
+-------------------------------------------------------------
+WARNING -- The above is only a rough guideline.
+For best results, please be sure you know the
+precision of your system timer.
+-------------------------------------------------------------
+Function    Best Rate MB/s  Avg time     Min time     Max time
+Copy:          336346.5     0.048083     0.047570     0.050549
+Scale:         331619.6     0.049703     0.048248     0.066865
+Add:           324253.8     0.075812     0.074016     0.081527
+Triad:         321462.1     0.075687     0.074659     0.076816
+-------------------------------------------------------------
+Solution Validates: avg error less than 1.000000e-13 on all three arrays
+-------------------------------------------------------------

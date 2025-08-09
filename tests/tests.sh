@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the list of array sizes (N) to test
-declare -a N_ARRAY=(10000 100000 1000000 10000000 100000000 500000000 1000000000)
+declare -a N_ARRAY=(10000 100000 1000000 10000000 100000000 500000000 1000000000 2000000000)
 
 # Define the models to test
 declare -a MODELS=("" "-DHOST" "-DZERO_COPY")
